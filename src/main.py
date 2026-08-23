@@ -46,9 +46,16 @@ class ATrustLogin:
             PROFILE_DIR = "Default"
 
             binary_location = browser_path or "/usr/bin/chromium"
-            chrome_data_dir = os.path.join("/tmp", "chrome-data")
+            # Keep the complete browser profile on the mounted data directory.
+            # Modern aTrust versions store authentication state outside cookies
+            # and localStorage as well (for example in IndexedDB).
+            chrome_data_dir = os.path.join(self.data_dir, "chrome-data")
             log_file = os.path.join(chrome_data_dir, "chrome.log")
             os.makedirs(chrome_data_dir, exist_ok=True)
+            for singleton_file in ("SingletonCookie", "SingletonLock", "SingletonSocket"):
+                singleton_path = os.path.join(chrome_data_dir, singleton_file)
+                if os.path.lexists(singleton_path):
+                    os.remove(singleton_path)
 
             logger.info(f"Starting Chrome with debug port {DEBUG_PORT}")
             self.chrome_process = subprocess.Popen([
@@ -302,14 +309,25 @@ class ATrustLogin:
     def init(self):
         if not self.initialized:
             self.open_portal()
-            self.wait_login_page()
-            self.delay_loading()
-            if self.load_storage():
-                # The SPA has already initialized before persisted browser state is
-                # restored. Reload the portal so it can authenticate with that state.
-                self.open_portal()
+            if self.container_mode:
                 self.wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
                 self.delay_loading()
+                # Chromium loaded the persistent profile before opening the portal.
+                # Only explicit CLI cookies still need to be injected here.
+                self.set_cli_cookie(force=False)
+                if self.cookie_tid and self.cookie_sig:
+                    self.open_portal()
+                    self.wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
+                    self.delay_loading()
+            else:
+                self.wait_login_page()
+                self.delay_loading()
+                if self.load_storage():
+                    # The SPA has already initialized before persisted browser state is
+                    # restored. Reload the portal so it can authenticate with that state.
+                    self.open_portal()
+                    self.wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
+                    self.delay_loading()
             self.initialized = True
 
     def login(self, username, password, totp_key, **kwargs):
@@ -319,7 +337,17 @@ class ATrustLogin:
             logger.info("Already logged in")
             return True
 
+        self.wait_login_page()
         self.enter_credentials(username=username, password=password)
+
+        if not self.cookie_tid or not self.cookie_sig:
+            logger.warning("Click login and complete verification in the browser")
+            while not self.is_logged():
+                time.sleep(1)
+            logger.info("Login Success")
+            self.update_storage()
+            return True
+
         self.delay_input()
         self.click_login_button()
 
