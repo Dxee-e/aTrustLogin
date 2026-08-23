@@ -269,6 +269,9 @@ class ATrustLogin:
         return element
 
     def set_cli_cookie(self, force=False):
+        if not self.cookie_tid or not self.cookie_sig:
+            return
+
         if force or not self.driver.get_cookie("tid"):
             self.driver.delete_cookie("tid")
             self.driver.add_cookie({
@@ -318,14 +321,18 @@ class ATrustLogin:
         logger.debug("Checking captcha ...")
 
         if "图形校验码" in self.driver.page_source:
-            if 'is_retried' not in kwargs:
+            if self.cookie_tid and self.cookie_sig and 'is_retried' not in kwargs:
                 self.set_cli_cookie(force=True)
                 self.driver.refresh()
-                self.login( username, password, totp_key, is_retried=True)
-                return
+                self.wait_login_page()
+                return self.login(username, password, totp_key, is_retried=True)
             else:
-                logger.warning("Need to handle captcha, press any key to continue")
-                self.require_interact()
+                logger.warning("Complete the captcha in the browser")
+                while not self.is_logged():
+                    time.sleep(1)
+                logger.info("Login Success")
+                self.update_storage()
+                return True
 
         if "TOTP" in self.driver.page_source and "二次认证" in self.driver.page_source:
             if totp_key is not None:
