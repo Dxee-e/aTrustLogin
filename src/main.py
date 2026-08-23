@@ -40,6 +40,7 @@ class ATrustLogin:
 
         if self.container_mode:
             from selenium.webdriver.chrome.options import Options
+            from selenium.webdriver.chrome.service import Service
 
             DEBUG_PORT = "55555"
             PROFILE_DIR = "Default"
@@ -81,7 +82,7 @@ class ATrustLogin:
 
             self.options = Options()
             self.options.debugger_address = f"127.0.0.1:{DEBUG_PORT}"
-            self.driver = webdriver.Chrome(options=self.options)
+            self.driver = webdriver.Chrome(service=Service(driver_path), options=self.options)
 
         else:
             if driver_type is None:
