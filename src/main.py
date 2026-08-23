@@ -243,6 +243,7 @@ class ATrustLogin:
 
     def load_storage(self):
         # 从pickle文件中加载存储的数据
+        storage_loaded = False
         try:
             if os.path.exists(os.path.join(self.data_dir, "ATrustLoginStorage.pkl")):
                 with open(os.path.join(self.data_dir, "ATrustLoginStorage.pkl"), "rb") as f:
@@ -255,10 +256,12 @@ class ATrustLogin:
                     for key, value in data.local_storage.items():
                         self.driver.execute_script(f"window.localStorage.setItem('{key}', '{value}')")
                     logger.info("Loaded storage data")
+                    storage_loaded = True
         except FileNotFoundError:
             logger.info("未找到存储的数据")
 
         self.set_cli_cookie(force=False)
+        return storage_loaded
 
     def scroll_to(self, element):
         self.driver.execute_script("arguments[0].scrollIntoView();", element)
@@ -301,7 +304,12 @@ class ATrustLogin:
             self.open_portal()
             self.wait_login_page()
             self.delay_loading()
-            self.load_storage()
+            if self.load_storage():
+                # The SPA has already initialized before persisted browser state is
+                # restored. Reload the portal so it can authenticate with that state.
+                self.open_portal()
+                self.wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
+                self.delay_loading()
             self.initialized = True
 
     def login(self, username, password, totp_key, **kwargs):
