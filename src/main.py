@@ -339,15 +339,6 @@ class ATrustLogin:
 
         self.wait_login_page()
         self.enter_credentials(username=username, password=password)
-
-        if not self.cookie_tid or not self.cookie_sig:
-            logger.warning("Click login and complete verification in the browser")
-            while not self.is_logged():
-                time.sleep(1)
-            logger.info("Login Success")
-            self.update_storage()
-            return True
-
         self.delay_input()
         self.click_login_button()
 
