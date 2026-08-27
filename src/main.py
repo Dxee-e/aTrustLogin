@@ -403,7 +403,11 @@ class ATrustLogin:
         return any(keyword in url.fragment for keyword in self.must_be_logged_keywords)
 
     def close(self):
-        self.driver.quit()
+        if hasattr(self, 'driver'):
+            try:
+                self.driver.quit()
+            except Exception as e:
+                logger.warning(f"Failed to close Selenium cleanly: {e}")
         if self.container_mode and hasattr(self, 'chrome_process') and self.chrome_process.poll() is None:
             self.chrome_process.terminate()
             try:
@@ -451,29 +455,31 @@ def main(portal_address, username, password, totp_key=None, cookie_tid=None, coo
     # 创建ATrustLogin对象
     at = ATrustLogin(data_dir=data_dir, portal_address=portal_address, cookie_tid=cookie_tid, cookie_sig=cookie_sig, driver_type=driver_type, driver_path=driver_path, browser_path=browser_path, interactive=interactive, container_mode=container_mode)
 
-    at.init()
+    try:
+        at.init()
 
-    while True:
-        try:
-            if not at.is_logged():
-                logger.info("Session lost. Trying to login again ...")
-                at.open_portal()
-                at.delay_loading()
-                if at.login(username=username, password=password, totp_key=totp_key) is True:
+        while True:
+            try:
+                if not at.is_logged():
+                    logger.info("Session lost. Trying to login again ...")
+                    at.open_portal()
                     at.delay_loading()
-                    at.delay_loading()
+                    if at.login(username=username, password=password, totp_key=totp_key) is True:
+                        at.delay_loading()
+                        at.delay_loading()
 
-            if keepalive <= 0:
-                at.close()
-                exit(0)
-            else:
-                time.sleep(keepalive)
-                at.open_portal()
+                if keepalive <= 0:
+                    return
+                else:
+                    time.sleep(keepalive)
+                    at.open_portal()
+                    at.delay_loading()
+            except Exception as e:
+                logger.error("An error occurred when trying to login, retrying ...")
+                logger.exception(e)
                 at.delay_loading()
-        except Exception as e:
-            logger.error("An error occurred when trying to login, retrying ...")
-            logger.exception(e)
-            at.delay_loading()
+    finally:
+        at.close()
 
 if __name__ == "__main__":
     from fire import Fire
