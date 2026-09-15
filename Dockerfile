@@ -21,10 +21,13 @@ ENV PING_INTERVAL=1800
 VOLUME ["/root", "/usr/share/sangfor/EasyConnect/resources/logs/"]
 
 RUN echo "Begin build" && \
-    sed -i 's|http://.*archive.ubuntu.com|https://mirrors.ustc.edu.cn|g; s|http://.*security.ubuntu.com|https://mirrors.ustc.edu.cn|g' /etc/apt/sources.list && \
+    printf '%s\n' \
+      'deb https://mirrors.ustc.edu.cn/debian bookworm main' \
+      'deb https://mirrors.ustc.edu.cn/debian bookworm-updates main' \
+      'deb https://mirrors.ustc.edu.cn/debian-security bookworm-security main' \
+      > /etc/apt/sources.list && \
     mkdir -p ~/.pip && \
     date > /etc/build-date.txt && \
-    sed -i 's|http://deb.debian.org|https://mirrors.ustc.edu.cn|g; s|http://security.debian.org|https://mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list && \
     echo "[global]" > ~/.pip/pip.conf && \
     echo "index-url = https://mirrors.ustc.edu.cn/pypi/web/simple" >> ~/.pip/pip.conf && \
     chmod +x /bin/start-with-autologin.sh && \

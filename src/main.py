@@ -446,6 +446,17 @@ class ATrustLogin:
                     logger.info(f"aTrust Port {port} is not yet being listened on. Waiting for aTrust start ...")
                     ATrustLogin.delay_loading()
 
+    def sleep_with_session_check(self, seconds, interval=10):
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            time.sleep(min(interval, max(1, deadline - time.time())))
+            try:
+                if self.is_logged() is False:
+                    logger.info("Session changed to login page. Retrying now ...")
+                    return
+            except Exception as e:
+                logger.debug(f"Session check failed during sleep: {e}")
+
 def main(portal_address, username, password, totp_key=None, cookie_tid=None, cookie_sig=None, keepalive=200, data_dir="./data", driver_type=None, driver_path=None, browser_path=None, interactive=False, wait_atrust=True, container_mode=False):
     logger.info("Opening Web Browser")
 
@@ -471,7 +482,7 @@ def main(portal_address, username, password, totp_key=None, cookie_tid=None, coo
                 if keepalive <= 0:
                     return
                 else:
-                    time.sleep(keepalive)
+                    at.sleep_with_session_check(keepalive)
                     at.open_portal()
                     at.delay_loading()
             except Exception as e:
