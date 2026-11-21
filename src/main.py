@@ -23,6 +23,8 @@ class ATrustLoginStorage(BaseModel):
     local_storage: Dict[str, Any]
 
 class ATrustLogin:
+    PORTAL_NAVIGATION_ATTEMPTS = 3
+
     def __init__(self, portal_address, driver_path=None, browser_path=None, driver_type=None, data_dir="data", cookie_tid=None, cookie_sig=None, interactive=False, container_mode=False):
         self.initialized = False
         self.container_mode = container_mode
@@ -131,7 +133,7 @@ class ATrustLogin:
 
     # 打开默认的portal地址并等待sangfor_main_auth_container出现
     def open_portal(self):
-        self.driver.get(self.portal_address)
+        self._ensure_portal_context()
 
         if self.driver.get_cookie("language"):
             self.driver.delete_cookie("language")
@@ -155,6 +157,32 @@ class ATrustLogin:
                 "path": "/",
             }
         )
+
+    def _is_portal_context(self):
+        """Return whether Selenium is currently on the configured portal host."""
+        current_host = urlparse(self.driver.current_url).hostname
+        return bool(current_host and self.portal_host and current_host.lower() == self.portal_host.lower())
+
+    def _ensure_portal_context(self):
+        """Navigate to the portal before adding domain-scoped cookies.
+
+        Chromium can briefly remain on ``data:,`` or an error page while the
+        portal is starting. Selenium rejects portal cookies in that context
+        with InvalidCookieDomainException, so retry navigation here and expose
+        a recoverable error to the caller if the portal never becomes ready.
+        """
+        for attempt in range(1, self.PORTAL_NAVIGATION_ATTEMPTS + 1):
+            self.driver.get(self.portal_address)
+            if self._is_portal_context():
+                return
+            logger.warning(
+                "Portal navigation did not reach the configured host "
+                f"(attempt {attempt}/{self.PORTAL_NAVIGATION_ATTEMPTS})"
+            )
+            if attempt < self.PORTAL_NAVIGATION_ATTEMPTS:
+                self.delay_input()
+
+        raise RuntimeError("Portal navigation did not reach the configured host")
 
     def wait_login_page(self):
         # 使用显式等待sangfor_main_auth_container元素出现
@@ -281,6 +309,9 @@ class ATrustLogin:
     def set_cli_cookie(self, force=False):
         if not self.cookie_tid or not self.cookie_sig:
             return
+
+        if not self._is_portal_context():
+            raise RuntimeError("Cannot set CLI cookies outside the configured portal host")
 
         if force or not self.driver.get_cookie("tid"):
             self.driver.delete_cookie("tid")
@@ -467,10 +498,13 @@ def main(portal_address, username, password, totp_key=None, cookie_tid=None, coo
     at = ATrustLogin(data_dir=data_dir, portal_address=portal_address, cookie_tid=cookie_tid, cookie_sig=cookie_sig, driver_type=driver_type, driver_path=driver_path, browser_path=browser_path, interactive=interactive, container_mode=container_mode)
 
     try:
-        at.init()
-
         while True:
             try:
+                # Initialization performs network navigation and can fail while
+                # the portal or browser is still starting. Keep it in the same
+                # retry boundary as login so transient failures do not restart
+                # the entire autologin process.
+                at.init()
                 if not at.is_logged():
                     logger.info("Session lost. Trying to login again ...")
                     at.open_portal()
